@@ -1,0 +1,86 @@
+---
+
+- include_tasks: k8s_local.yml
+  tags: openstack
+
+- block:
+  - name: Renew certs
+    become: yes
+    shell: >
+      kubeadm alpha certs renew all
+
+  - name: get certs from primary master
+    synchronize:
+      src: /etc/kubernetes/pki
+      dest: /tmp/
+      mode: pull
+      rsync_opts:
+      - '--include=*.key'
+      - '--include=*.crt'
+      - '--include=*ca.*'
+      - '--include=*sa.*'
+      - '--include=*/'
+      - '--exclude=*'
+
+  when: inventory_hostname == 'k8s-master-1'
+
+- block:
+    - name: update admin.conf
+      become: yes
+      shell: >
+        kubeadm alpha kubeconfig user --apiserver-advertise-address={{ os_lb_masters }} --org system:masters --client-name kubernetes-admin  > admin.conf
+      args:
+        chdir: '/etc/kubernetes'
+
+    - name: update controller-manager.conf
+      become: yes
+      shell: >
+        kubeadm alpha kubeconfig user --apiserver-advertise-address={{ os_lb_masters }} --client-name system:kube-controller-manager > controller-manager.conf
+      args:
+        chdir: '/etc/kubernetes'
+
+    - name: update kubelet.conf
+      become: yes
+      shell: >
+        kubeadm alpha kubeconfig user --apiserver-advertise-address={{ os_lb_masters }} --org system:nodes --client-name system:node:$(hostname) > kubelet.conf
+      args:
+        chdir: '/etc/kubernetes'
+
+    - name: update sheduler.conf
+      become: yes
+      shell: >
+        kubeadm alpha kubeconfig user --apiserver-advertise-address={{ os_lb_masters }} --client-name system:kube-scheduler > scheduler.conf
+      args:
+        chdir: '/etc/kubernetes'
+
+    - name: Restart kube daemonsets
+      become: yes
+      shell: >
+        kill -1 $(pidof {{ item }})
+      loop:
+        - kube-apiserver
+        - kube-controller-manager
+        - kube-scheduler
+        - ip-masq-agent
+        - filebeat
+      ignore_errors: yes
+
+  when: inventory_hostname in groups ['k8s_master']
+
+- include_tasks: k8s_drain.yml
+  when: inventory_hostname == 'k8s-master-1'
+
+- block:
+
+  - name: copy certs to other masters
+    become: yes
+    synchronize:
+      src: /tmp/pki
+      dest: /etc/kubernetes/
+      mode: push
+      delete: yes
+
+
+  - include_tasks: k8s_drain.yml
+
+  when: inventory_hostname in groups ['k8s_master']

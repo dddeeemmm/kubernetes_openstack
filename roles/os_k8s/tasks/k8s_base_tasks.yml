@@ -1,0 +1,212 @@
+### BASE TASKS
+
+- name: install requisites
+  apt:
+    update_cache: yes
+    name:
+    - lvm2
+    - vim
+    - tmux
+    - python-pip
+    - python3-dev
+    - python3-pip
+    - curl
+    - rsync
+    - socat
+    - unzip
+    - e2fsprogs
+    - xfsprogs
+    - ipset
+    - ipvsadm
+
+- name: install pip requirements
+  become: yes
+  pip:
+    state: forcereinstall
+    name: "{{ item }}"
+  loop:
+    - setuptools
+    - openshift
+    - docker
+
+- name: Modprobe nf_conntrack_ipv4 for kernels < 4.19
+  modprobe:
+   name: nf_conntrack_ipv4
+   state: present
+  register: enable_nf_conntrack
+  ignore_errors: yes
+
+- name: Modprobe nf_conntrack for kernels >= 4.19
+  modprobe:
+   name: nf_conntrack
+   state: present
+
+- name: Persist ip_vs modules
+  copy:
+   dest: /etc/modules-load.d/kube_proxy-ipvs.conf
+   content: |
+     ip_vs
+     ip_vs_rr
+     ip_vs_wrr
+     ip_vs_sh
+     nf_conntrack
+
+- name: Set net.ipv4.ip_forward = 1 l in sysctl
+  become: yes
+  sysctl:
+    name: net.ipv4.ip_forward
+    value: 1
+    state: present
+    reload: yes
+
+- name: Setup
+  action: setup
+
+- name: Set policy ACCEPT on chain FORWARD (cf. https://github.com/projectcalico/calico/issues/1840)
+  shell: iptables -P FORWARD ACCEPT
+
+- name: Install k8s APT repo GPG key
+  apt_key:
+    url: "https://packages.cloud.google.com/apt/doc/apt-key.gpg"
+    state: present
+
+- name: Setup k8s APT repo
+  apt_repository:
+    repo: deb http://apt.kubernetes.io/ kubernetes-xenial main
+    state: present
+
+- name: Unhold docker and kubernetes packages
+  command: "apt-mark unhold {{ item }}"
+  with_items:
+    - docker.io
+    - kubelet
+    - kubeadm
+    - kubectl
+    - kubernetes-cni
+
+- name: Install docker and kubernetes packages
+  apt:
+    name:
+      [
+        "docker.io={{ docker_version }}",
+        "kubelet={{ kubernetes_ubuntu_version }}",
+        "kubeadm={{ kubernetes_ubuntu_version }}",
+        "kubectl={{ kubernetes_ubuntu_version }}",
+        "kubernetes-cni={{ kubernetes_cni_ubuntu_version }}",
+      ]
+    state: present
+    update_cache: yes
+
+- name: Enable docker service
+  systemd:
+    name: docker
+    enabled: yes
+    daemon_reload: yes
+
+- name: Hold docker and kubernetes packages
+  command: "apt-mark hold {{ item }}"
+  with_items:
+    - docker.io
+    - kubelet
+    - kubeadm
+    - kubectl
+    - kubernetes-cni
+
+- name: configure docker to use json-file
+  template:
+    src: files/daemon.json.j2
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Restart docker
+  systemd:
+      state: restarted
+      daemon_reload: yes
+      name: docker
+
+- name: Log into Docker registry
+  become: yes
+  docker_login:
+    registry: "{{ docker_registry }}"
+    username: "{{ docker_username }}"
+    password: "{{ docker_password }}"
+    debug: true
+    tls: yes
+    reauthorize: yes
+
+- name: register docker-config
+  shell: cat /root/.docker/config.json
+  register: docker_content
+
+- name: Set fact docker_config
+  set_fact:
+    docker_config: "{{ docker_content.stdout | b64encode }}"
+
+#- name: dont write docker logs to /var/log/syslog
+#  copy:
+#    content: |
+#      if $programname == 'dockerd' or $syslogtag == 'dockerd' then /dev/null
+#      & stop
+#    dest: "/etc/rsyslog.d/30-docker.conf"
+#    mode: 0644
+#    owner: root
+#    group: root
+#  notify:
+#    - Restart rsyslog
+
+- name: add hosts
+  lineinfile:
+    dest: "/etc/hosts"
+    regexp: ".*{{ hostvars[item].ansible_hostname }}$"
+    line: "{{ hostvars[item].ansible_default_ipv4.address }} {{ hostvars[item].ansible_hostname }}"
+    state: present
+  when: hostvars[item].ansible_hostname is defined
+  with_items: "{{groups['all'] | default([])}}"
+
+- name: change hostname
+  become: yes
+  shell: 'hostname {{ inventory_hostname }}'
+
+- name: Create OpenStack cloud configuration
+  template:
+    src: files/cloud-config.j2
+    dest: /etc/kubernetes/cloud-config
+    mode: 0600
+
+- name: Override default kubeadm configuration to use the OpenStack cloud configuration
+  copy:
+    src: files/10-kubeadm.conf
+    dest: /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+    mode: 0600
+
+- name: Restart kubelet
+  systemd:
+      state: restarted
+      daemon_reload: yes
+      name: kubelet
+
+- name: kubeadm | aggregate all SANs
+  set_fact:
+    apiserver_sans: "{{ ( sans_base + groups['k8s_master'] + sans_access_ip + sans_ip + sans_address + sans_hostname + sans_fqdn ) | unique }}"
+  vars:
+    sans_base:
+      - "kubernetes"
+      - "kubernetes.default"
+      - "kubernetes.default.svc"
+      - "{{ openstack_lb_ip }}"
+      - "{{ansible_default_ipv4.address}}"
+      - "localhost"
+      - "127.0.0.1"
+    sans_access_ip: "{{ groups['k8s_master'] | map('extract', hostvars, 'access_ip') | list | select('defined') | list }}"
+#    sans_access_etcd_ip: "{{ groups['k8s_etcd'] | map('extract', hostvars, 'access_ip') | list | select('defined') | list }}"
+    sans_ip: "{{ groups['k8s_master'] | map('extract', hostvars, 'ip') | list | select('defined') | list }}"
+#    sans_etcd_ip: "{{ groups['k8s_etcd'] | map('extract', hostvars, 'ip') | list | select('defined') | list }}"
+    sans_address: "{{ groups['k8s_master'] | map('extract', hostvars, ['ansible_default_ipv4', 'address']) | list | select('defined') | list }}"
+#    sans_etcd_address: "{{ groups['k8s_etcd'] | map('extract', hostvars, ['ansible_default_ipv4', 'address']) | list | select('defined') | list }}"
+    sans_hostname: "{{ groups['k8s_master'] | map('extract', hostvars, ['ansible_hostname']) | list | select('defined') | list }}"
+#    sans_etcd_hostname: "{{ groups['k8s_etcd'] | map('extract', hostvars, ['ansible_hostname']) | list | select('defined') | list }}"
+    sans_fqdn: "{{ groups['k8s_master'] | map('extract', hostvars, ['ansible_fqdn']) | list | select('defined') | list }}"
+#    sans_etcd_fqdn: "{{ groups['k8s_etcd'] | map('extract', hostvars, ['ansible_fqdn']) | list | select('defined') | list }}"
+  tags: facts

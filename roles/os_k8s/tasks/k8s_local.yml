@@ -1,0 +1,91 @@
+### OPENSTACK FETCH ENV AND REGISTER VARIABLES ###
+
+- block:
+
+    - os_subnets_facts:
+        validate_certs: no
+        name: '{{ os_project_name }}-subnet-1'
+      register: openstack_subnet
+
+    - set_fact:
+        openstack_subnet_id: '{{ openstack_subnet.ansible_facts.openstack_subnets[0].id }}'
+
+    - debug: msg={{ openstack_subnet_id }}
+
+    - os_project_facts:
+        validate_certs: no
+        name: '{{ os_project_name }}'
+
+    - set_fact:
+        os_project_id: "{{ openstack_projects | map (attribute='id') | join (',') }}"
+
+    - debug: msg={{ os_project_id }}
+
+    - os_router:
+        validate_certs: no
+        name: 'r1-int-{{ os_project_name }}'
+      register: openstack_router
+
+    - set_fact:
+        openstack_router_id: "{{ openstack_router.id }}"
+
+    - debug: msg={{ openstack_router_id }}
+
+    - os_router:
+        validate_certs: no
+        name: 'r1-int-{{ os_project_name }}'
+      register: openstack_router
+
+    - set_fact:
+        openstack_router_id: "{{ openstack_router.id }}"
+
+    - debug: msg={{ openstack_router_id }}
+
+    # LOAD BALANCER
+    - name: create openStack loadBalancer
+      become: no
+      environment:
+        OS_PROJECT_ID: '{{ os_project_id }}'
+        OS_PROJECT_NAME: '{{ os_project_name }}'
+      os_loadbalancer:
+        validate_certs: no
+        name: '{{ os_project_name }}-lb-k8s-masters'
+        state: present
+        vip_subnet: '{{ os_project_name }}-subnet-1'
+      register: openstack_lb_k8s
+
+    - debug: msg={{ openstack_lb_k8s.loadbalancer.vip_address }}
+
+
+    - set_fact:
+        openstack_lb_ip: "{{ openstack_lb_k8s.loadbalancer.vip_address }}"
+    
+    - name: Append listener
+      os_listener:
+        endpoint_type: public
+        state: present
+        name: '{{ os_project_name }}-api-server'
+        loadbalancer: '{{ os_project_name }}-lb-k8s-masters'
+        protocol: TCP
+        protocol_port: 6443
+        wait: no
+
+    - name: Append pool
+      os_pool:
+        state: present
+        name:  '{{ os_project_name }}-pool-api-server'
+        listener: '{{ os_project_name }}-api-server'
+        protocol: TCP
+        lb_algorithm: ROUND_ROBIN
+
+    - name: Append member
+      os_member:
+        state: present
+        name: 'k8s-master-1'
+        pool: '{{ os_project_name }}-pool-api-server'
+        address: '{{ hostvars[groups.k8s_master[0]].ansible_default_ipv4.address }}'
+        protocol_port: 6443
+
+  delegate_to: localhost
+  run_once: true
+  tags: openstack

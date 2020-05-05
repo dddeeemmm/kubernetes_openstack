@@ -1,0 +1,29 @@
+### OPENSTACK FETCH ENV AND REGISTER VARIABLES ###
+
+- block:
+
+  # TODO: NEED FAST FIX! HELP ME PLEASE!
+
+  - name: Append member k8s-master-2
+    environment:
+      OS_PROJECT_ID: '{{ os_project_id }}'
+    os_member:
+      state: present
+      name: 'k8s-master-2'
+      pool: '{{ os_project_name }}-pool-api-server'
+      address: '{{ hostvars[groups.k8s_master[1]].ansible_default_ipv4.address }}'
+      protocol_port: 6443
+
+  - name: Append member k8s-master-3
+    environment:
+      OS_PROJECT_ID: '{{ os_project_id }}'
+    os_member:
+      state: present
+      name: 'k8s-master-3'
+      pool: '{{ os_project_name }}-pool-api-server'
+      address: '{{ hostvars[groups.k8s_master[2]].ansible_default_ipv4.address }}'
+      protocol_port: 6443
+
+  delegate_to: localhost
+  run_once: true
+  tags: openstack

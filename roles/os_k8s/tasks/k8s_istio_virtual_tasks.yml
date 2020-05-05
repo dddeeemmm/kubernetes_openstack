@@ -1,0 +1,89 @@
+---
+
+- block:
+
+  - name: Create gateway for kiali (dashboard with graph istio)
+    k8s:
+      definition:
+        apiVersion: networking.istio.io/v1alpha3
+        kind: Gateway
+        metadata:
+          name: kiali-gateway
+          namespace: istio-system
+        spec:
+          selector:
+            istio: ingressgateway # use istio default controller
+          servers:
+          - port:
+              number: 15029
+              name: http
+              protocol: HTTP
+            hosts:
+            - "*"
+
+  - name: Create virtual service for kiali (dashboard with graph istio)
+    k8s:
+      definition:
+        apiVersion: networking.istio.io/v1alpha3
+        kind: VirtualService
+        metadata:
+          name: kiali
+          namespace: istio-system
+        spec:
+          hosts:
+          - "*"
+          gateways:
+          - kiali-gateway
+          http:
+          - match:
+            - uri:
+                prefix: /
+            route:
+            - destination:
+                host: kiali
+                port:
+                  number: 20001
+
+  - name: Create gateway for grafana
+    k8s:
+      definition:
+        apiVersion: networking.istio.io/v1alpha3
+        kind: Gateway
+        metadata:
+          name: grafana-gateway
+          namespace: istio-system
+        spec:
+          selector:
+            istio: ingressgateway # use istio default controller
+          servers:
+          - port:
+              number: 15031
+              name: http
+              protocol: HTTP
+            hosts:
+            - "*"
+
+  - name: Create virtual service for grafana
+    k8s:
+      definition:
+        apiVersion: networking.istio.io/v1alpha3
+        kind: VirtualService
+        metadata:
+          name: grafana
+          namespace: istio-system
+        spec:
+          hosts:
+          - "*"
+          gateways:
+          - grafana-gateway
+          http:
+          - match:
+            - uri:
+                prefix: /
+            route:
+            - destination:
+                host: grafana
+                port:
+                  number: 3000
+
+  tags: virtual_services

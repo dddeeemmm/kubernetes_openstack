@@ -1,0 +1,324 @@
+- name: Check for existing kubelet configuration
+  stat:
+      path: /etc/kubernetes/kubelet.conf
+  register: kubelet_conf
+
+- name: Ensure /etc/kubernetes/pki/ directory is present
+  become: True
+  file:
+      path: /etc/kubernetes/pki/
+      state: directory
+      owner: root
+      group: root
+      mode: 0700
+
+- name: Create kubeadm config file
+  template:
+    src: files/kubeadm-init.yaml.j2
+    dest: /etc/kubeadm-init.conf.yaml
+    mode: 0600
+
+- name: copy etcd-certs to primary master
+  become: yes
+  synchronize:
+    src: /tmp/pki
+    dest: /etc/kubernetes/
+    mode: push
+    delete: yes
+  when: staging is not defined
+
+- name: Remove etcd systemd unit
+  file:
+    path: /etc/systemd/system/kubelet.service.d/20-etcd-service-manager.conf
+    state: absent
+
+- name: stop kubelet
+  become: yes
+  systemd:
+    name: kubelet
+    enabled: yes
+    state: stopped
+    daemon_reload: yes
+
+- name: Run kubeadm init
+  command: "kubeadm init --config /etc/kubeadm-init.conf.yaml --upload-certs {% if staging is not defined %}--ignore-preflight-errors=all {% endif %}"
+  args:
+      creates: /etc/kubernetes/kubelet.conf
+  when: kubelet_conf.stat.exists == False
+
+- name: ensure .kube directory exists
+  file:
+    path: ~/.kube
+    state: directory
+
+- name: symlink admin.conf to ~/.kube/conf
+  file:
+    src: /etc/kubernetes/admin.conf
+    dest: ~/.kube/config
+    state: link
+    force: yes
+
+- name: Generate a join token
+  command: kubeadm token create --print-join-command
+  register: joincommand
+
+- name: Set fact joincommand
+  set_fact:
+      joincommand: "{{ joincommand.stdout }}"
+
+- name: Generate a join master token
+  command: kubeadm token create
+  register: k8s_master_token
+
+- name: Set fact joincommand
+  set_fact:
+      k8s_master_token: "{{ k8s_master_token.stdout }}"
+
+- name: In case of upgrade make sure container versions are right for kube-apiserver
+  replace:
+      path: /etc/kubernetes/manifests/kube-apiserver.yaml
+      regexp: v1.[0-9]{1,2}.[0-9]{1,2}
+      replace: "{{ kubernetes_version }}"
+
+- name: In case of upgrade make sure container versions are right for kube-controller-manager
+  replace:
+      path: /etc/kubernetes/manifests/kube-controller-manager.yaml
+      regexp: v1.[0-9]{1,2}.[0-9]{1,2}
+      replace: "{{ kubernetes_version }}"
+
+- name: In case of upgrade make sure container versions are right for kube-scheduler
+  replace:
+      path: /etc/kubernetes/manifests/kube-scheduler.yaml
+      regexp: v1.[0-9]{1,2}.[0-9]{1,2}
+      replace: "{{ kubernetes_version }}"
+
+- name: Ensure kubectl configuration directory is present
+  become: True
+  file:
+      path: /home/ubuntu/.kube
+      state: directory
+      owner: ubuntu
+      group: ubuntu
+      mode: 0700
+
+- name: Copy kubectl configuration for the default user
+  become: True
+  copy:
+      remote_src: True
+      src: /etc/kubernetes/admin.conf
+      dest: /home/ubuntu/.kube/config
+      owner: ubuntu
+      group: ubuntu
+      mode: 0600
+
+- name: Check for existing kubectl bash completion
+  stat:
+      path: /etc/bash_completion.d/kubectl
+  register: kubectl_bash_completion
+
+- name: Ensure kubectl bash_completion is present
+  become: True
+  shell: kubectl completion bash > /etc/bash_completion.d/kubectl
+  when: kubectl_bash_completion.stat.exists == False
+
+- name: Check for existing kubectx
+  stat:
+      path: /opt/kubectx/kubectx
+  register: kubectx
+
+- name: Clone kubectx repo
+  git:
+      repo: https://github.com/ahmetb/kubectx
+      dest: /opt/kubectx
+  when: kubectx.stat.exists == False
+
+- name: Link kubectx
+  file:
+      state: link
+      src: /opt/kubectx/kubectx
+      dest: /usr/local/bin/kubectx
+  when: kubectx.stat.exists == False
+
+- name: Link kubens
+  file:
+      state: link
+      src: /opt/kubectx/kubens
+      dest: /usr/local/bin/kubens
+  when: kubectx.stat.exists == False
+
+- name: create directory for ingress controller
+  file:
+    path: /etc/kubernetes/octavia-ingress-controller
+    state: directory
+
+- name: copy octavia ingress configs
+  template:
+    src: "{{ item }}.j2"
+    dest: "/etc/kubernetes/{{ item }}"
+  loop:
+    - octavia-ingress-controller/serviceaccount.yaml
+    - octavia-ingress-controller/config.yaml
+    - octavia-ingress-controller/deployment.yaml
+
+- name: Create configMap ip-masq-agent
+  k8s:
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: ip-masq-agent
+        namespace: kube-system
+        labels:
+          k8s-app: ip-masq-agent
+      data:
+        config: |+
+          nonMasqueradeCIDRs:
+            - {{ pod_subnet_cidr }}
+            - {{ subnet_cidr }}
+          masqLinkLocal: false
+          resyncInterval: 60s
+
+- name: Create ip-masq-agent DaemonSet
+  k8s:
+    definition:
+      apiVersion: apps/v1
+      kind: DaemonSet
+      metadata:
+        annotations:
+          deprecated.daemonset.template.generation: "0"
+        creationTimestamp: null
+        labels:
+          k8s-app: ip-masq-agent
+        name: ip-masq-agent
+        namespace: kube-system
+      spec:
+        revisionHistoryLimit: 10
+        selector:
+          matchLabels:
+            k8s-app: ip-masq-agent
+        template:
+          metadata:
+            creationTimestamp: null
+            labels:
+              k8s-app: ip-masq-agent
+          spec:
+            tolerations:
+              - effect: NoExecute
+                operator: Exists
+              - effect: NoSchedule
+                operator: Exists
+            containers:
+            - image: gcr.io/google-containers/ip-masq-agent-amd64:v2.0.0
+              imagePullPolicy: IfNotPresent
+              name: ip-masq-agent
+              resources: {}
+              securityContext:
+                privileged: true
+              terminationMessagePath: /dev/termination-log
+              terminationMessagePolicy: File
+              volumeMounts:
+              - mountPath: /etc/config
+                name: config
+            dnsPolicy: ClusterFirst
+            hostNetwork: true
+            restartPolicy: Always
+            schedulerName: default-scheduler
+            securityContext: {}
+            terminationGracePeriodSeconds: 30
+            volumes:
+            - configMap:
+                defaultMode: 420
+                items:
+                - key: config
+                  path: ip-masq-agent
+                name: ip-masq-agent
+                optional: true
+              name: config
+
+
+- name: apply coredns obj
+  k8s:
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: coredns
+        namespace: kube-system
+      spec:
+        replicas: 3
+        template:
+          spec:
+            affinity:
+              nodeAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  nodeSelectorTerms:
+                  - matchExpressions:
+                    - key: node-role.kubernetes.io/master
+                      operator: In
+                      values:
+                        - ""
+              tolerations:
+                - NoSchedule: NoSchedule
+                  operator: Exists
+
+- name: apply ingress controller - octavia
+  shell: >
+    kubectl apply -f
+    /etc/kubernetes/octavia-ingress-controller/{{ item }}.yaml
+  loop:
+    - serviceaccount
+    - config
+    - deployment
+
+- name: apply a {{ os_project_name }} namespace
+  k8s:
+    definition:
+      kind: Namespace
+      metadata:
+        name: "{{ os_project_name }}"
+
+- name: apply {{ os_project_name }} service account
+  k8s:
+    definition:
+      kind: ServiceAccount
+      metadata:
+        name: "{{ os_project_name }}"
+        namespace: "{{ os_project_name }}"
+        labels:
+          k8s-app: "{{ os_project_name }}"
+
+- name: apply {{ os_project_name }} a secret docker registry
+  k8s:
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: registry
+        namespace: "{{ os_project_name }}"
+      data:
+        .dockerconfigjson: "{{ docker_config }}"
+      type: kubernetes.io/dockerconfigjson
+
+- name: apply kube-system a secret registry
+  k8s:
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: registry
+        namespace: "kube-system"
+      data:
+        .dockerconfigjson: "{{ docker_config }}"
+      type: kubernetes.io/dockerconfigjson
+
+- name: get certs from primary master
+  synchronize:
+    src: /etc/kubernetes/pki
+    dest: /tmp/master
+    mode: pull
+    rsync_opts:
+    - '--include=apiserver.key'
+    - '--include=ca.key'
+    - '--include=front-proxy-ca.key'
+    - '--include=front-proxy-client.key'
+    - '--include=sa.key'

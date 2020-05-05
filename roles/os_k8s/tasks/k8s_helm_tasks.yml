@@ -1,0 +1,40 @@
+- block:
+  - name: Download healm
+    get_url:
+      url: https://raw.githubusercontent.com/kubernetes/helm/master/scripts/get
+      dest: /tmp/install-helm.sh
+      mode: '0755'
+
+  - name: install helm
+    command: /tmp/install-helm.sh
+
+  - name: create Service-Account for helm
+    k8s:
+      definition:
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: tiller
+          namespace: kube-system
+
+
+  - name: create Clusterrolebinding for helm
+    k8s:
+      definition:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: tiller
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: cluster-admin
+        subjects:
+        - kind: ServiceAccount
+          name: tiller
+          namespace: kube-system
+
+  - name: init helm
+    command: helm init --service-account tiller
+
+  tags: helm

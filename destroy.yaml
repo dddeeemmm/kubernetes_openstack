@@ -1,0 +1,40 @@
+---
+
+- hosts: all
+  gather_facts: no
+  become: yes
+  tasks:
+ 
+    - name: Reset Kubernetes component
+      shell: "kubeadm reset --force"
+      ignore_errors: True
+
+    - name: ipvsadm clear
+      shell: "ipvsadm --clear"
+      ignore_errors: True
+
+    - name: manifests clear
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/kubernetes/manifests
+        - /etc/kubernetes/pki
+        - /etc/kubernetes/kubelet.conf
+        - /var/lib/etcd
+      ignore_errors: True
+
+    - name: stop service docker 
+      systemd:
+        name: docker 
+        state: stopped
+      ignore_errors: True
+
+    - name: iptables flush
+      shell: "sudo iptables -t nat -F && sudo iptables -t mangle -F && sudo iptables -F && sudo iptables -X"
+      ignore_errors: True
+
+    - name: delete cbr0
+      shell: "ifconfig cbr0 down  && brctl delbr cbr0"
+      ignore_errors: True
+

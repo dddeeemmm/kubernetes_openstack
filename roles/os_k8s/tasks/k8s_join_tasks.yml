@@ -1,0 +1,103 @@
+- block:
+  - name: copy certs from etcd master to other masters
+    become: yes
+    synchronize:
+      src: /tmp/pki
+      dest: /etc/kubernetes/
+      mode: push
+      delete: yes
+
+  - name: copy certs from primary master to other masters
+    become: yes
+    synchronize:
+      src: /tmp/master/pki
+      dest: /etc/kubernetes/
+      mode: push
+      delete: yes
+
+  - name: Check for existing kubelet configuration
+    stat:
+      path: /etc/kubernetes/kubelet.conf
+    register: kubelet_conf
+
+  - name: Remove etcd systemd unit
+    file:
+      path: /etc/systemd/system/kubelet.service.d/20-etcd-service-manager.conf
+      state: absent
+
+  - name: stop kubelet
+    become: yes
+    systemd:
+      name: kubelet
+      enabled: yes
+      state: stopped
+      daemon_reload: yes
+
+  - name: Create kubeadm config file
+    template:
+      src: files/kubeadm-init.yaml.j2
+      dest: /etc/kubeadm-init.conf.yaml
+      mode: 0600
+
+  - name: kubeadm join other masters
+    command: "kubeadm init --config /etc/kubeadm-init.conf.yaml --upload-certs {% if staging is not defined %}--ignore-preflight-errors=all {% endif %}"
+    args:
+        creates: /etc/kubernetes/kubelet.conf
+    when: kubelet_conf.stat.exists == False
+
+  - name: ensure .kube directory exists
+    file:
+      path: ~/.kube
+      state: directory
+
+  - name: symlink admin.conf to ~/.kube/conf
+    become: yes
+    file:
+      src: /etc/kubernetes/admin.conf
+      dest: ~/.kube/config
+      state: link
+
+  - name: Create kubeadm flags
+    template:
+        src: files/kubeadm-flags.env
+        dest: /var/lib/kubelet/kubeadm-flags.env
+
+  - name: Restart kubelet
+    systemd:
+        state: restarted
+        daemon_reload: yes
+        name: kubelet
+
+  when: inventory_hostname in groups ['k8s_master']
+
+- block:
+
+  - name: Check for existing kubelet configuration
+    stat:
+      path: /etc/kubernetes/kubelet.conf
+    register: kubelet_conf
+
+  - name: Create directory manifests
+    file:
+      state: directory
+      path: /etc/kuberntes/manifests
+      mode: '0700'
+
+  - name: kubeadm join
+    command: "{{ hostvars[groups.k8s_master[0]]['joincommand'] }}"
+    args:
+      creates: /etc/kubernetes/kubelet.conf
+    when: kubelet_conf.stat.exists == False
+
+  - name: HACK - kubeadm flags
+    template:
+        src: files/kubeadm-flags.env
+        dest: /var/lib/kubelet/kubeadm-flags.env
+
+  - name: Restart kubelet
+    systemd:
+        state: restarted
+        daemon_reload: yes
+        name: kubelet
+
+  when: inventory_hostname in groups['k8s_nodes']

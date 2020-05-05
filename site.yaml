@@ -1,0 +1,8 @@
+---
+
+- hosts: all
+  roles:
+  - { role: common }
+  - { role: netdata,  tags: netdata }
+  - { role: os_k8s,  tags: ['k8s-openstack'] }
+

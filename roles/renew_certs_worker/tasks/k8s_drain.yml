@@ -1,0 +1,40 @@
+---
+
+- name: Remove files from workers
+  file:
+    path: "/etc/kubernetes/{{ item }}"
+    state: absent
+  loop:
+    - pki/ca.crt
+    - kubelet.conf
+  ignore_errors: yes
+
+- name: stop kubelet
+  become: yes
+  systemd:
+    name: kubelet
+    enabled: yes
+    state: stopped
+    daemon_reload: yes
+
+- name: Check for existing kubelet configuration
+  stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: kubelet_conf
+
+- name: kubeadm join
+  command: "{{ hostvars[groups.k8s_master[0]]['joincommand'] }}"
+  args:
+    creates: /etc/kubernetes/kubelet.conf
+  when: kubelet_conf.stat.exists == False
+
+- name: HACK - kubeadm flags
+  template:
+    src: files/kubeadm-flags.env
+    dest: /var/lib/kubelet/kubeadm-flags.env
+
+- name: Restart kubelet
+  systemd:
+    state: restarted
+    daemon_reload: yes
+    name: kubelet

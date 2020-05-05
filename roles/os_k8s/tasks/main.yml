@@ -1,0 +1,46 @@
+---
+
+- name: remove tmp
+  local_action: file path=/tmp/pki state=absent
+
+- include_tasks: k8s_local.yml
+  tags: openstack
+
+- include_tasks: k8s_base_tasks.yml
+
+- include_tasks: k8s_etcd_tasks.yml
+  when: inventory_hostname in groups ['k8s_master'] and staging is not defined
+
+- include_tasks: k8s_init_tasks.yml
+  when: inventory_hostname == 'k8s-master-1'
+
+- include_tasks: k8s_join_tasks.yml
+  when: inventory_hostname != 'k8s-master-1'
+
+- include_tasks: k8s_tune_tasks.yml
+  when: inventory_hostname == 'k8s-master-1'
+
+- name: remove tmp
+  local_action: file path=/tmp/pki state=absent
+
+- block:
+  - block:
+    
+    - include_tasks: k8s_metrics_tasks.yml
+  
+    - import_tasks: k8s_fluent-bit_tasks.yml  
+      when: flunt_bit is defined
+      tags: flunt-bit
+  
+    - block:
+  
+      - include_tasks: k8s_istio_tasks.yml
+  
+      - include_tasks: k8s_istio_virtual_tasks.yml
+    
+      when: istio is defined
+
+  when: inventory_hostname == 'k8s-master-1'
+
+- include_tasks: k8s_lb_master.yml
+  when: staging is not defined

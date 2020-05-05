@@ -1,0 +1,203 @@
+# Docs @ https://godoc.org/k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/v1beta2
+
+apiVersion: kubeadm.k8s.io/v1beta2
+kind: InitConfiguration
+{% if k8s_master_token is defined %}
+bootstrapTokens:
+- token: "{{ k8s_master_token }}"
+  description: "kubeadm bootstrap token"
+  ttl: "24h"
+{% endif %}
+nodeRegistration:
+  kubeletExtraArgs:
+#    cgroup-driver: systemd
+    cloud-provider: openstack
+    cloud-config: /etc/kubernetes/cloud-config
+    network-plugin: kubenet
+    network-plugin-mtu: "9148"
+#    cluster-dns: "{{ cluster_dns_ip }}"
+    # non-masquerade-cidr: 0.0.0.0/0 # from https://medium.com/elotl-blog/kubernetes-networking-on-aws-part-i-99012e938a40
+  taints:
+  - effect: NoSchedule
+    key: node-role.kubernetes.io/master
+localAPIEndpoint:
+  advertiseAddress: "{{ ansible_default_ipv4.address }}"
+
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+#cgroupDriver: systemd
+cgroupsPerQOS: true
+containerLogMaxFiles: 5
+containerLogMaxSize: 10Mi
+contentType: application/vnd.kubernetes.protobuf
+cpuManagerPolicy: none
+cpuManagerReconcilePeriod: 10s
+enableControllerAttachDetach: true
+enableDebuggingHandlers: true
+enforceNodeAllocatable:
+- pods
+eventBurst: 10
+eventRecordQPS: 5
+evictionPressureTransitionPeriod: 5m0s
+failSwapOn: true
+fileCheckFrequency: 20s
+httpCheckFrequency: 20s
+imageGCHighThresholdPercent: 85
+imageGCLowThresholdPercent: 80
+imageMinimumGCAge: 2m0s
+iptablesDropBit: 15
+iptablesMasqueradeBit: 14
+kubeAPIBurst: 10
+kubeAPIQPS: 5
+makeIPTablesUtilChains: true
+maxOpenFiles: 1000000
+maxPods: 110
+nodeLeaseDurationSeconds: 40
+nodeStatusReportFrequency: 1m0s
+nodeStatusUpdateFrequency: 10s
+oomScoreAdj: -999
+podPidsLimit: -1
+port: 10250
+registryBurst: 10
+registryPullQPS: 5
+rotateCertificates: true
+runtimeRequestTimeout: 2m0s
+serializeImagePulls: true
+#staticPodPath: /etc/kubernetes/manifests
+streamingConnectionIdleTimeout: 4h0m0s
+syncFrequency: 1m0s
+topologyManagerPolicy: none
+volumeStatsAggPeriod: 1m0s
+
+
+---
+apiVersion: kubeadm.k8s.io/v1beta2
+kind: ClusterConfiguration
+kubernetesVersion: "{{ kubernetes_version }}"
+controlPlaneEndpoint: '{{ openstack_lb_ip }}:6443'
+certificatesDir: /etc/kubernetes/pki
+apiServer:
+  certSANs:
+  {% for san in apiserver_sans %}
+- {{ san }}
+  {% endfor %}
+
+  extraArgs:
+    advertise-address: "{{ ansible_default_ipv4.address }}"
+    bind-address: 0.0.0.0
+    authorization-mode: "Node,RBAC"
+    cloud-provider: "openstack"
+  extraVolumes:
+    - name: "cloud-config"
+      hostPath: "/etc/kubernetes/cloud-config"
+      mountPath: "/etc/kubernetes/cloud-config"
+      readOnly: true
+      pathType: FileOrCreate
+    - name: etc-pki-tls
+      hostPath: /usr/local/share/ca-certificates
+      mountPath: /etc/pki/tls
+      readOnly: true
+    - name: etc-pki-ca-trust
+      hostPath: /usr/local/share/ca-certificates
+      mountPath: /etc/pki/ca-trust
+      readOnly: true
+
+dns:
+  type: CoreDNS
+  imageRepository: docker.io/coredns
+
+controllerManager:
+  extraArgs:
+    cloud-provider: openstack
+#    external-cloud-volume-plugin: openstack
+    bind-address: 0.0.0.0
+    cloud-config: /etc/kubernetes/cloud-config
+    configure-cloud-routes: "true"
+    allocate-node-cidrs: "true"
+  extraVolumes:
+    - name: "cloud-config"
+      hostPath: "/etc/kubernetes/cloud-config"
+      mountPath: "/etc/kubernetes/cloud-config"
+      readOnly: true
+      pathType: FileOrCreate
+    - name: os-certs
+      hostPath: "/usr/local/share/ca-certificates/{{ cert_name }}"
+      mountPath: "/etc/pki/ca-trust/source/anchors/{{ cert_name }}"
+
+networking:
+  # ServiceSubnet is the subnet used by k8s services. Defaults to "10.96.0.0/12".
+  serviceSubnet: "{{ subnet_cidr }}"
+  # PodSubnet is the subnet used by pods.
+  podSubnet: "{{ pod_subnet_cidr }}"
+
+etcd:
+  local:
+    extraArgs:
+{% if staging is not defined %}
+      initial-cluster: {% for item in groups['k8s_master'] | map('extract',hostvars,['ansible_default_ipv4','address']) | list %}k8s-master-{{loop.index}}=https://{{ item }}:2380{% if not loop.last %},{% endif %}{% endfor %}
+
+      name: {{ inventory_hostname }}
+
+{% if inventory_hostname == 'k8s-master-1' %}
+      initial-cluster-state: new
+{% else %}
+      initial-cluster-state: existing
+{% endif %}
+
+{% endif %}
+      listen-peer-urls: https://{{ ansible_default_ipv4.address }}:2380
+      listen-client-urls: {% for item in groups['k8s_master'] | map('extract',hostvars,['ansible_default_ipv4','address']) | list %}https://{{ item }}:2379{% if not loop.last %},{% endif %}{% endfor %}
+
+      advertise-client-urls: {% for item in groups['k8s_master'] | map('extract',hostvars,['ansible_default_ipv4','address']) | list %}https://{{ item }}:2379{% if not loop.last %},{% endif %}{% endfor %}
+
+      initial-advertise-peer-urls: https://{{ ansible_default_ipv4.address }}:2380
+      client-cert-auth: "true"
+      peer-client-cert-auth: "true"
+
+    serverCertSANs:
+    {% for san in apiserver_sans %}
+- {{ san }}
+    {% endfor %}
+
+    peerCertSANs:
+    {% for san in apiserver_sans %}
+- {{ san }}
+    {% endfor %}
+
+
+
+---
+
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+bindAddress: 0.0.0.0
+clusterCIDR: {{ pod_subnet_cidr }}
+featureGates:
+  SupportIPVSProxyMode: true
+configSyncPeriod: 15m0s
+conntrack:
+ maxPerCore: 32768
+ min: 131072
+ tcpCloseWaitTimeout: 1h0m0s
+ tcpEstablishedTimeout: 24h0m0s
+enableProfiling: False
+healthzBindAddress: 0.0.0.0:10256
+hostnameOverride: {{ inventory_hostname }}
+iptables:
+ masqueradeAll: True
+ masqueradeBit: 14
+ minSyncPeriod: 0s
+ syncPeriod: 30s
+ipvs:
+ excludeCIDRs: []
+ minSyncPeriod: 0s
+ scheduler: rr
+ syncPeriod: 30s
+ strictARP: False
+metricsBindAddress: 127.0.0.1:10249
+mode: ipvs
+nodePortAddresses: []
+oomScoreAdj: -999
+portRange:
+udpIdleTimeout: 250ms

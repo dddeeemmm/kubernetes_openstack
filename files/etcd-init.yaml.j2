@@ -1,0 +1,25 @@
+apiVersion: "kubeadm.k8s.io/v1beta2"
+kind: ClusterConfiguration
+etcd:
+    local:
+        extraArgs:
+            initial-cluster: {% for item in groups['k8s_master'] | map('extract',hostvars,['ansible_default_ipv4','address']) | list %}k8s-master-{{loop.index}}=https://{{ item }}:2380{% if not loop.last %},{% endif %}{% endfor %}
+
+            name: {{ inventory_hostname }}
+            initial-cluster-state: new
+            listen-peer-urls: https://{{ ansible_default_ipv4.address }}:2380
+            listen-client-urls: https://{{ ansible_default_ipv4.address }}:2379
+            advertise-client-urls: https://{{ ansible_default_ipv4.address }}:2379
+            initial-advertise-peer-urls: https://{{ ansible_default_ipv4.address }}:2380
+            client-cert-auth: "false"
+            peer-client-cert-auth: "false"
+
+        serverCertSANs:
+        {% for san in apiserver_sans %}
+- {{ san }}
+        {% endfor %}
+
+        peerCertSANs:
+        {% for san in apiserver_sans %}
+- {{ san }}
+        {% endfor %}

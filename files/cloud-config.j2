@@ -1,0 +1,37 @@
+[Global]
+auth-url = {{ lookup('env', 'OS_AUTH_URL') }}
+username = {{ lookup('env', 'OS_USERNAME') }}
+password = "{{ lookup('env', 'OS_PASSWORD') }}"
+tenant-name = {{ os_project_name }}
+tenant-id = {{ os_project_id }}
+{% if lookup('env', 'OS_REGION_NAME') != '' %}
+region = {{ lookup('env', 'OS_REGION_NAME') }}
+{% endif %}
+{% if lookup('env', 'OS_DOMAIN_NAME') != '' %}
+domain-name = {{ lookup('env', 'OS_DOMAIN_NAME') }}
+{% elif lookup('env', 'OS_USER_DOMAIN_NAME') != '' %}
+domain-name = {{ lookup('env', 'OS_USER_DOMAIN_NAME') }}
+{% endif %}
+{% if lookup('env', 'OS_USER_DOMAIN_ID') != '' %}
+domain-name = {{ lookup('env', 'OS_USER_DOMAIN_ID') }}
+{% endif %}
+
+[BlockStorage]
+trust-device-path = false
+bs-version = {{ hostvars[groups.k8s_master[0]]['block_storage_version'] }}
+{% if hostvars[groups.k8s_master[0]]['ignore_volume_az'] %}
+ignore-volume-az = true
+{% endif %}
+
+[LoadBalancer]
+lb-version = v2
+subnet-id = {{ openstack_subnet_id }}
+create-monitor = yes
+use-octavia = yes
+manage-security-groups = true
+monitor-delay = 1m
+monitor-timeout = 30s
+monitor-max-retries = 3
+
+[Route]
+router-id = {{ openstack_router_id }}

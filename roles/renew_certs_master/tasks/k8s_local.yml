@@ -1,0 +1,33 @@
+- block:
+
+    - os_project_facts:
+        validate_certs: no
+        name: '{{ os_project_name }}'
+
+    - set_fact:
+        os_project_id: "{{ openstack_projects | map (attribute='id') | join (',') }}"
+
+    - debug: msg={{ os_project_id }}
+
+
+
+    # LOAD BALANCER
+    - name: create openStack loadBalancer
+      become: no
+      environment:
+        OS_PROJECT_ID: '{{ os_project_id }}'
+        OS_PROJECT_NAME: '{{ os_project_name }}'
+      os_loadbalancer:
+        validate_certs: no
+        name: '{{ os_project_name }}-lb-k8s-masters'
+        state: present
+        vip_subnet: '{{ os_project_name }}-subnet-1'
+      register: openstack_lb_k8s
+
+
+    - set_fact:
+        os_lb_masters: "{{ openstack_lb_k8s.loadbalancer.vip_address }}"
+
+  delegate_to: localhost
+  run_once: true
+  tags: openstack

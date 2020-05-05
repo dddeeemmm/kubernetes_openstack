@@ -1,0 +1,99 @@
+---
+
+- name: Check for existing kubelet configuration
+  stat:
+      path: /etc/kubernetes/kubelet.conf
+  register: kubelet_conf
+
+- name: Create etc systemd unit
+  template:
+      src: files/20-etcd-service-manager.conf
+      dest: /etc/systemd/system/kubelet.service.d/20-etcd-service-manager.conf
+
+- name: stop kubelet
+  become: yes
+  systemd:
+    name: kubelet
+    enabled: yes
+    state: stopped
+    daemon_reload: yes
+
+- name: started kubelet
+  become: yes
+  systemd:
+    name: kubelet
+    state: started
+    daemon_reload: yes
+
+- name: Create kubeadm config file for etcd init
+  template:
+      src: files/etcd-init.yaml.j2
+      dest: /etc/etcd-init.conf.yaml
+      mode: 0600
+
+
+- block:
+
+    - name: Kubeadm init certs for etcd ca
+      become: yes
+      shell: >
+        kubeadm init phase certs etcd-ca --config=/etc/etcd-init.conf.yaml
+
+    - name: Kubeadm init certs for etcd
+      become: yes
+      shell: >
+        kubeadm init phase certs {{ item }} --config=/etc/etcd-init.conf.yaml
+      loop:
+        - etcd-server
+        - etcd-peer
+        - etcd-healthcheck-client
+        - apiserver-etcd-client
+
+    - name: get certs from primary etcd
+      synchronize:
+        src: /etc/kubernetes/pki
+        dest: /tmp/
+        mode: pull
+        rsync_opts:
+        - '--include=apiserver-etcd-client.crt'
+        - '--include=apiserver-etcd-client.key'
+        - '--include=etcd/ca.crt'
+        - '--include=etcd/ca.key'
+        - '--exclude=etcd/*'
+
+  when: inventory_hostname == 'k8s-master-1'
+
+- name: copy etcd-certs to other etcd
+  become: yes
+  synchronize:
+    src: /tmp/pki
+    dest: /etc/kubernetes/
+    mode: push
+    delete: no
+
+- name: Kubeadm init certs for other etcd
+  become: yes
+  shell: >
+    kubeadm init phase certs {{ item }} --config=/etc/etcd-init.conf.yaml
+  loop:
+    - etcd-server
+    - etcd-peer
+    - etcd-healthcheck-client
+    - apiserver-etcd-client
+
+
+- name: Kubeadm init certs for etcd
+  become: yes
+  shell: >
+    kubeadm init phase etcd local --config=/etc/etcd-init.conf.yaml
+
+- name: rename etcd.yaml
+  become: yes
+  shell: mv /etc/kubernetes/manifests/etcd.yaml /etc/kubernetes/manifests/external_etcd.yaml
+
+- name: remove etcd option service
+  become: yes
+  file:
+    state: absent
+    path: /etc/systemd/system/kubelet.service.d/20-etcd-service-manager.conf
+

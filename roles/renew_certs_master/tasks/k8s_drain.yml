@@ -1,0 +1,36 @@
+---
+
+- block:
+
+    - name: Kubectl drain
+      become: yes
+      shell: >
+        kubectl drain --ignore-daemonsets $(hostname)
+
+
+    - name: stop kubelet
+      become: yes
+      systemd:
+        name: kubelet
+        enabled: yes
+        state: stopped
+        daemon_reload: yes
+
+    - name: Delete /var/lib/kubelet/pki/*
+      become: yes
+      shell: >
+        rm -rf /var/lib/kubelet/pki/*
+
+    - name: started kubelet
+      become: yes
+      systemd:
+        name: kubelet
+        state: started
+        daemon_reload: yes
+
+    - name: Kubectl uncordon
+      become: yes
+      shell: >
+        kubectl uncordon $(hostname)
+
+  tags: drain

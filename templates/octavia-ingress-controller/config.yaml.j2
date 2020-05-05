@@ -1,0 +1,18 @@
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: octavia-ingress-controller-config
+  namespace: kube-system
+data:
+  config: |
+    cluster-name: lbas-{{os_project_name}}
+    openstack:
+      auth-url: https://{{ openstack_auth_url|default('localhost') }}/v3
+      domain-name: {{ openstack_domain_name }}
+      username: {{ openstack_k8s_username }}
+      password: {{ openstack_k8s_password }}
+      project-id: {{ openstack_tenant_id }}
+      region: {{ openstack_region_name }}
+    octavia:
+      subnet-id: {{ openstack_subnet_id }}

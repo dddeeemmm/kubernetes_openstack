@@ -1,0 +1,46 @@
+---
+- name: Upgrade K8S
+  hosts: k8s_master
+  become: true
+  tasks:
+    - name: upgrade kubeadm binary manually
+      get_url:
+        url: https://dl.k8s.io/release/{{ kubernetes_version }}/bin/linux/amd64/kubeadm
+        dest:  /usr/bin/kubeadm
+        mode: 755
+        force: yes
+
+    - name: upgrade kubectl binary manually
+      get_url:
+        url: https://dl.k8s.io/release/{{ kubernetes_version }}/bin/linux/amd64/kubectl
+        dest:  /usr/bin/kubectl
+        mode: 755
+        force: yes
+
+    - name: upgrade kubectl binary manually
+      get_url:
+        url: https://dl.k8s.io/release/{{ kubernetes_version }}/bin/linux/amd64/kubelet
+        dest:  /usr/bin/kubelet
+        mode: 755
+        force: yes
+
+    - name: Run kubeadm upgrade
+      shell: sudo kubeadm upgrade apply {{ kubernetes_version }} -y
+
+    - name: Run kubelet upgrade
+      shell: sudo systemctl restart kubelet
+
+- name: Upgrade K8S
+  hosts: k8s_nodes
+  become: true
+  tasks:
+
+    - name: upgrade kubectl binary manually
+      get_url:
+        url: https://dl.k8s.io/release/{{ kubernetes_version }}/bin/linux/amd64/kubelet
+        dest:  /usr/bin/kubelet
+        mode: 755
+        force: yes
+
+    - name: Run kubelet upgrade
+      shell: sudo systemctl restart kubelet

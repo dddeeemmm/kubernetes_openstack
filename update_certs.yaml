@@ -1,0 +1,6 @@
+---
+
+- hosts: all
+  roles:
+  - { role: renew_certs_master, tags: ['renew_certs_master'] }
+  - { role: renew_certs_worker, tags: ['renew_certs_worker'] }

@@ -1,0 +1,29 @@
+---
+
+- block:
+  
+  - include_tasks: k8s_local.yml
+    tags: local
+
+  - include_tasks: k8s_base_tasks.yml
+    tags: k8s_base
+
+  when: inventory_hostname in workers_for_join
+
+- block:
+
+  - name: Generate a join token
+    command: kubeadm token create --print-join-command
+    register: joincommand
+
+  - name: Set fact joincommand
+    set_fact:
+      joincommand: "{{ joincommand.stdout }}"
+
+  when: inventory_hostname == 'k8s-master-1'
+
+- block:
+
+  - include_tasks: k8s_join_tasks.yml
+
+  when: inventory_hostname in workers_for_join

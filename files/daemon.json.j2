@@ -1,0 +1,13 @@
+{
+    "exec-opts": [
+        "native.cgroupdriver=cgroupfs"
+    ],
+    "log-driver": "json-file",
+    "log-opts": {
+        "max-size": "600m",
+        "max-file": "30",
+        "labels": "{{ os_project_name }}",
+        "compress": "true"
+    },
+    "storage-driver": "overlay2"
+}

@@ -1,0 +1,26 @@
+---
+
+- hosts: localhost
+  gather_facts: yes
+  vars:
+    os_mode: instances
+    os_project_name: '{{ os_project_name }}'
+    os_clusters:
+      k8s-master:
+        - {
+            name: k8s-master,
+            count: 3,
+            img: '{{ ubuntu }}',
+            sg: ['{{os_project_name}}-ssh','{{os_project_name}}-egress','{{os_project_name}}-k8s'],
+            fv: c1.02.02048
+        }
+      k8s-worker:
+        - {
+            name: k8s-worker,
+            count: 5,
+            img: '{{ ubuntu }}',
+            sg: ['{{os_project_name}}-ssh','{{os_project_name}}-egress','{{os_project_name}}-k8s'],
+            fv: db1.02.04096
+        }
+  roles:
+    - {role: os_mgmt, tags: os_mgmt}

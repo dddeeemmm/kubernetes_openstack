@@ -1,0 +1,57 @@
+---
+
+- block:
+
+  - name: Generate a join token
+    command: kubeadm token create --print-join-command
+    register: joincommand
+
+  - name: Set fact joincommand
+    set_fact:
+      joincommand: "{{ joincommand.stdout }}"
+
+  - name: Kubectl drain
+    become: yes
+    shell: >
+      kubectl drain --ignore-daemonsets k8s-worker-1 --delete-local-data
+
+  when: inventory_hostname == 'k8s-master-1'
+
+- block:
+
+  - include_tasks: k8s_drain.yml
+
+  when: inventory_hostname == 'k8s-worker-1'
+
+- block:
+
+  - name: Kubectl uncordon k8s-worker-1
+    become: yes
+    shell: >
+      kubectl uncordon k8s-worker-1
+
+  - name: Kubectl drain {{ item}}
+    become: yes
+    shell: >
+      kubectl drain --ignore-daemonsets {{ item }} --delete-local-data
+    delegate_to: "{{ hostvars[groups.k8s_master[0]]['ansible_hostname'] }}"
+    with_sequence: start=2 end={{ count_worker | default(3) }} format=k8s-worker-%01d
+
+  when: inventory_hostname == 'k8s-master-1'
+
+- block:
+
+  - include_tasks: k8s_drain.yml
+
+  when: inventory_hostname in groups ['k8s_nodes'] and inventory_hostname != 'k8s-worker-1'
+
+- block:
+
+  - name: Kubectl uncordon {{ item }}
+    become: yes
+    shell: >
+      kubectl uncordon {{ item }}
+    with_sequence: start=2 end={{ count_worker | default(3) }} format=k8s-worker-%01d
+
+
+  when: inventory_hostname == 'k8s-master-1'

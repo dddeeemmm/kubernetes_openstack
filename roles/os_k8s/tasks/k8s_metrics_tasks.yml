@@ -1,0 +1,490 @@
+- block:
+
+### Metrics server Needed for kind: HPA
+
+  - name: Create ClusterRole for metrics-server
+    k8s:
+      definition:
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: metrics-server
+          namespace: kube-system
+
+  - name: Create ClusterRole for metrics-server
+    k8s:
+      definition:
+        kind: ClusterRole
+        apiVersion: rbac.authorization.k8s.io/v1
+        metadata:
+          name: system:aggregated-metrics-reader
+          labels:
+            rbac.authorization.k8s.io/aggregate-to-view: "true"
+            rbac.authorization.k8s.io/aggregate-to-edit: "true"
+            rbac.authorization.k8s.io/aggregate-to-admin: "true"
+        rules:
+          - apiGroups: ["metrics.k8s.io"]
+            resources: ["pods", "nodes"]
+            verbs: ["get", "list", "watch"]
+
+  - name: Create ClusterRoleBinding for metrics-server
+    k8s:
+      definition:
+        apiVersion: rbac.authorization.k8s.io/v1beta1
+        kind: ClusterRoleBinding
+        metadata:
+          name: metrics-server:system:auth-delegator
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: system:auth-delegator
+        subjects:
+        - kind: ServiceAccount
+          name: metrics-server
+          namespace: kube-system
+
+  - name: Create RoleBinding for metrics-server
+    k8s:
+      definition:
+        apiVersion: rbac.authorization.k8s.io/v1beta1
+        kind: RoleBinding
+        metadata:
+          name: metrics-server-auth-reader
+          namespace: kube-system
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: Role
+          name: extension-apiserver-authentication-reader
+        subjects:
+        - kind: ServiceAccount
+          name: metrics-server
+          namespace: kube-system
+
+  - name: Create APIService for metrics-server
+    k8s:
+      definition:
+        apiVersion: apiregistration.k8s.io/v1beta1
+        kind: APIService
+        metadata:
+          name: v1beta1.metrics.k8s.io
+        spec:
+          service:
+            name: metrics-server
+            namespace: kube-system
+          group: metrics.k8s.io
+          version: v1beta1
+          insecureSkipTLSVerify: true
+          groupPriorityMinimum: 100
+          versionPriority: 100
+
+  - name: Create Deployment for metrics-server
+    k8s:
+      definition:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: metrics-server
+          namespace: kube-system
+          labels:
+            k8s-app: metrics-server
+        spec:
+          selector:
+            matchLabels:
+              k8s-app: metrics-server
+          template:
+            metadata:
+              name: metrics-server
+              labels:
+                k8s-app: metrics-server
+            spec:
+              serviceAccountName: metrics-server
+              volumes:
+              # mount in tmp so we can safely use from-scratch images and/or read-only containers
+              - name: tmp-dir
+                emptyDir: {}
+              containers:
+              - name: metrics-server
+                image: k8s.gcr.io/metrics-server-amd64:v0.3.6
+                command:
+                - /metrics-server
+                - --kubelet-insecure-tls
+                - --kubelet-preferred-address-types=InternalIP
+                - --cert-dir=/tmp
+                - --secure-port=443
+                - --kubelet-port=10250
+                - --kubelet-insecure-tls=true
+                - --logtostderr
+                imagePullPolicy: Always
+                volumeMounts:
+                - name: tmp-dir
+                  mountPath: /tmp
+
+  - name: Create Service for metrics-server
+    k8s:
+      definition:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: metrics-server
+          namespace: kube-system
+          labels:
+            kubernetes.io/name: "Metrics-server"
+            kubernetes.io/cluster-service: "true"
+        spec:
+          selector:
+            k8s-app: metrics-server
+          ports:
+          - port: 443
+            protocol: TCP
+            targetPort: 443
+
+  - name: Create ClusterRole for metrics-server
+    k8s:
+      definition:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        metadata:
+          name: system:metrics-server
+        rules:
+        - apiGroups:
+          - ""
+          resources:
+          - pods
+          - nodes
+          - nodes/stats
+          - namespaces
+          verbs:
+          - get
+          - list
+          - watch
+
+  - name: Create ClusterRoleBinding for metrics-server
+    k8s:
+      definition:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: system:metrics-server
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: system:metrics-server
+        subjects:
+        - kind: ServiceAccount
+          name: metrics-server
+          namespace: kube-system
+
+
+  # - name: Create service for heapster
+  #   k8s:
+  #     definition:
+  #       apiVersion: v1
+  #       kind: Service
+  #       metadata:
+  #         labels:
+  #           task: monitoring
+  #           # For use as a Cluster add-on (https://github.com/kubernetes/kubernetes/tree/master/cluster/addons)
+  #           # If you are NOT using this as an add-on, you should comment out this line.
+  #           kubernetes.io/cluster-service: 'true'
+  #           kubernetes.io/name: Heapster
+  #         name: heapster
+  #         namespace: kube-system
+  #       spec:
+  #         ports:
+  #         - port: 8082
+  #           targetPort: 8082
+  #         selector:
+  #           k8s-app: heapster
+
+  # - name: Create service for influxdb
+  #   k8s:
+  #     definition:
+  #       apiVersion: v1
+  #       kind: Service
+  #       metadata:
+  #         creationTimestamp: null
+  #         labels:
+  #           kubernetes.io/cluster-service: "true"
+  #           kubernetes.io/name: monitoring-influxdb
+  #           task: monitoring
+  #         name: monitoring-influxdb
+  #         namespace: kube-system
+  #       spec:
+  #         ports:
+  #         - port: 8086
+  #           protocol: TCP
+  #           targetPort: 8086
+  #         selector:
+  #           k8s-app: influxdb
+  #         sessionAffinity: None
+  #         type: ClusterIP
+
+  # - name: Create service for grafana
+  #   k8s:
+  #     definition:
+  #       apiVersion: v1
+  #       kind: Service
+  #       metadata:
+  #         labels:
+  #           k8s-app: grafana
+  #         name: grafana
+  #         namespace: kube-system
+  #       spec:
+  #         ports:
+  #         - port: 3000
+  #           protocol: TCP
+  #           targetPort: 3000
+  #         selector:
+  #           k8s-app: grafana
+  #         sessionAffinity: None
+  #         type: NodePort
+
+
+  # - name: Create serviceAccount for heapster
+  #   k8s:
+  #     definition:
+  #       apiVersion: v1
+  #       kind: ServiceAccount
+  #       metadata:
+  #         name: heapster
+  #         namespace: kube-system
+
+  # - name: Create clusterRoleBinding for heapster
+  #   k8s:
+  #     definition:
+  #       kind: ClusterRoleBinding
+  #       apiVersion: rbac.authorization.k8s.io/v1
+  #       metadata:
+  #         name: heapster
+  #       roleRef:
+  #         apiGroup: rbac.authorization.k8s.io
+  #         kind: ClusterRole
+  #         name: system:heapster
+  #       subjects:
+  #       - kind: ServiceAccount
+  #         name: heapster
+  #         namespace: kube-system
+
+  # - name: Create rbac for heapster
+  #   k8s:
+  #     definition:
+  #       apiVersion: rbac.authorization.k8s.io/v1
+  #       kind: ClusterRoleBinding
+  #       metadata:
+  #         name: heapster
+  #       roleRef:
+  #         apiGroup: rbac.authorization.k8s.io
+  #         kind: ClusterRole
+  #         name: system:heapster
+  #       subjects:
+  #       - kind: ServiceAccount
+  #         name: heapster
+  #         namespace: kube-system
+
+
+  # - name: Create clusterRole grafana
+  #   k8s:
+  #     definition:
+  #       apiVersion: rbac.authorization.k8s.io/v1
+  #       kind: ClusterRole
+  #       metadata:
+  #         annotations:
+  #           rbac.authorization.kubernetes.io/autoupdate: "true"
+  #         labels:
+  #           kubernetes.io/bootstrapping: rbac-defaults
+  #         name: system:heapster
+  #       rules:
+  #       - apiGroups:
+  #         - ""
+  #         resources:
+  #         - events
+  #         - namespaces
+  #         - nodes
+  #         - pods
+  #         - nodes/stats
+  #         verbs:
+  #         - create
+  #         - get
+  #         - list
+  #         - watch
+  #       - apiGroups:
+  #         - extensions
+  #         resources:
+  #         - deployments
+  #         verbs:
+  #         - get
+  #         - list
+  #         - watch
+
+  # - name: Create Deployment grafana
+  #   k8s:
+  #     definition:
+  #       apiVersion: apps/v1
+  #       kind: Deployment
+  #       metadata:
+  #         creationTimestamp: null
+  #         labels:
+  #           k8s-app: grafana
+  #         name: grafana
+  #         namespace: kube-system
+  #       spec:
+  #         progressDeadlineSeconds: 2147483647
+  #         replicas: 1
+  #         revisionHistoryLimit: 2147483647
+  #         selector:
+  #           matchLabels:
+  #             k8s-app: grafana
+  #         strategy:
+  #           rollingUpdate:
+  #             maxSurge: 1
+  #             maxUnavailable: 1
+  #           type: RollingUpdate
+  #         template:
+  #           metadata:
+  #             creationTimestamp: null
+  #             labels:
+  #               k8s-app: grafana
+  #           spec:
+  #             containers:
+  #             - env:
+  #               - name: INFLUXDB_HOST
+  #                 value: monitoring-influxdb
+  #               - name: GF_SERVER_HTTP_PORT
+  #                 value: "3000"
+  #               - name: GF_AUTH_BASIC_ENABLED
+  #                 value: "false"
+  #               - name: GF_AUTH_ANONYMOUS_ENABLED
+  #                 value: "true"
+  #               - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+  #                 value: Admin
+  #               - name: GF_SERVER_ROOT_URL
+  #                 value: /
+  #               image: k8s.gcr.io/heapster-grafana-amd64:v5.0.4
+  #               imagePullPolicy: IfNotPresent
+  #               name: grafana
+  #               ports:
+  #               - containerPort: 3000
+  #                 protocol: TCP
+  #               resources: {}
+  #               terminationMessagePath: /dev/termination-log
+  #               terminationMessagePolicy: File
+  #               volumeMounts:
+  #               - mountPath: /etc/ssl/certs
+  #                 name: ca-certificates
+  #                 readOnly: true
+  #               - mountPath: /var
+  #                 name: grafana-storage
+  #             dnsPolicy: ClusterFirst
+  #             restartPolicy: Always
+  #             schedulerName: default-scheduler
+  #             securityContext: {}
+  #             terminationGracePeriodSeconds: 30
+  #             volumes:
+  #             - hostPath:
+  #                 path: /etc/ssl/certs
+  #                 type: ""
+  #               name: ca-certificates
+  #             - emptyDir: {}
+  #               name: grafana-storage
+
+  # - name: Create deployment for heapster
+  #   k8s:
+  #     definition:
+  #       apiVersion: apps/v1
+  #       kind: Deployment
+  #       metadata:
+  #         name: heapster
+  #         namespace: kube-system
+  #       spec:
+  #         replicas: 1
+  #         selector:
+  #             matchLabels:
+  #               k8s-app: heapster
+  #         template:
+  #           metadata:
+  #             labels:
+  #               task: monitoring
+  #               k8s-app: heapster
+  #           spec:
+  #             serviceAccountName: heapster
+  #             containers:
+  #             - name: heapster
+  #               image: k8s.gcr.io/heapster-amd64:v1.5.4
+  #               command:
+  #               - /heapster
+  #               - --source=kubernetes:https://kubernetes.default?useServiceAccount=true&kubeletHttps=true&kubeletPort=10250&insecure=true
+  #               - --sink=influxdb:http://monitoring-influxdb.kube-system.svc:8086
+
+
+  # - name: Create deployment for influxdb
+  #   k8s:
+  #     definition:
+  #       apiVersion: apps/v1
+  #       kind: Deployment
+  #       metadata:
+  #         creationTimestamp: null
+  #         labels:
+  #           k8s-app: influxdb
+  #           task: monitoring
+  #         name: monitoring-influxdb
+  #         namespace: kube-system
+  #       spec:
+  #         progressDeadlineSeconds: 2147483647
+  #         replicas: 1
+  #         revisionHistoryLimit: 2147483647
+  #         selector:
+  #           matchLabels:
+  #             k8s-app: influxdb
+  #             task: monitoring
+  #         strategy:
+  #           rollingUpdate:
+  #             maxSurge: 1
+  #             maxUnavailable: 1
+  #           type: RollingUpdate
+  #         template:
+  #           metadata:
+  #             creationTimestamp: null
+  #             labels:
+  #               k8s-app: influxdb
+  #               task: monitoring
+  #           spec:
+  #             containers:
+  #             - image: k8s.gcr.io/heapster-influxdb-amd64:v1.5.2
+  #               imagePullPolicy: IfNotPresent
+  #               name: influxdb
+  #               resources: {}
+  #               terminationMessagePath: /dev/termination-log
+  #               terminationMessagePolicy: File
+  #               volumeMounts:
+  #               - mountPath: /data
+  #                 name: influxdb-storage
+  #             dnsPolicy: ClusterFirst
+  #             restartPolicy: Always
+  #             schedulerName: default-scheduler
+  #             securityContext: {}
+  #             terminationGracePeriodSeconds: 30
+  #             volumes:
+  #             - emptyDir: {}
+  #               name: influxdb-storage
+
+  # - name: Create ingress for grafana
+  #   k8s:
+  #     definition:
+  #       apiVersion: networking.k8s.io/v1beta1
+  #       kind: Ingress
+  #       metadata:
+  #         name: grafana
+  #         namespace: kube-system
+  #         annotations:
+  #           kubernetes.io/ingress.class: "openstack"
+  #           octavia.ingress.kubernetes.io/internal: "true"
+  #       spec:
+  #         rules:
+  #         - http:
+  #             paths:
+  #             - path: /
+  #               backend:
+  #                 serviceName: grafana
+  #                 servicePort: 3000
+
+  tags: metrics
