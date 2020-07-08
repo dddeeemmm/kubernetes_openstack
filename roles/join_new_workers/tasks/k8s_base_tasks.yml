@@ -137,7 +137,7 @@
     reauthorize: yes
 
 - name: register docker-config
-  shell: cat /root/.docker/config.json
+  shell: cat ~/.docker/config.json
   register: docker_content
 
 - name: Set fact docker_config

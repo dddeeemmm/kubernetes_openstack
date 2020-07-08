@@ -1,8 +1,15 @@
 ---
 
+# ansible-playbook -i hosts site.yaml -e os_project_name=cash-alfa-st2 -e flunt_bit=1
+
+- hosts: all
+  gather_facts: no
+  tasks:
+    - wait_for_connection:
+
 - hosts: all
   roles:
   - { role: common }
-  - { role: netdata,  tags: netdata }
+  # - { role: netdata,  tags: netdata }
   - { role: os_k8s,  tags: ['k8s-openstack'] }
 

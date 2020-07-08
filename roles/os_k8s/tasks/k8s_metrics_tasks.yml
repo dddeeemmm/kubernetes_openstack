@@ -487,4 +487,4 @@
   #                 serviceName: grafana
   #                 servicePort: 3000
 
-  tags: metrics
+#tags: metrics

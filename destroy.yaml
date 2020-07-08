@@ -38,3 +38,14 @@
       shell: "ifconfig cbr0 down  && brctl delbr cbr0"
       ignore_errors: True
 
+    # - name: Remove "k8s" package
+    #   apt:
+    #     name: '{{item}}'
+    #     state: absent 
+    #   loop:
+    #     - docker.io
+    #     - kubelet
+    #     - kubeadm
+    #     - kubectl
+    #     - kubernetes-cni
+    #   ignore_errors: True

@@ -1,0 +1,122 @@
+#!/bin/bash
+
+set -e
+set -o pipefail
+
+export KEYCLOAK_ADDRESS=""          # [required]
+export KEYCLOAK_AUTH_REALM=""       # [required]
+export KEYCLOAK_CLIENT_ID=""        # [required]
+export KEYCLOAK_CLIENT_SECRET=""    # [required]
+port=6443
+
+mv_conf() {
+  echo  rm config $HOME/.kube/config 
+  rm $HOME/.kube/config || exit 0 
+ 
+}
+
+
+dpkg_jq() {
+  command -v jq >/dev/null 2>&1 && return 0
+  echo "[WARNING] jq not found "
+  echo "please install jq"
+  echo "DEBIAN apt install jq"
+  echo "CENTOS yum install jq"
+}
+
+dpkg_nc() {
+  command -v nc >/dev/null 2>&1 && return 0
+  echo "[WARNING] nc not found in path"
+  echo "please install netcat"
+  echo "DEBIAN apt install nc"
+  echo "CENTOS yum install netcat"
+}
+
+dpkg_kubectl() {
+  command -v kubectl >/dev/null 2>&1 && return 0
+  echo "[WARNING] kubectl not found in path"
+  echo "please install kubectl"
+  echo "sudo curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/usr/local/bin/kubectl"
+}
+
+get_creds() {
+  echo "Please input your credentials for https://$KEYCLOAK_ADDRESS/auth/realms/$KEYCLOAK_AUTH_REALM"
+  if [ "$k8s" = "" ];then
+    read -rp "project_name_k8s: " k8s
+  fi
+  if [ "$KEYCLOAK_USERNAME" = "" ];then
+	  read -rp "login: " KEYCLOAK_USERNAME
+  fi
+  if [ "$KEYCLOAK_PASSWORD" = "" ];then
+	  read -rsp "password: " KEYCLOAK_PASSWORD
+    echo
+  fi
+  if [ "$KEYCLOAK_TOTP" = "" ]; then
+    read -rp "OTP Token [enter to skip]: " KEYCLOAK_TOTP
+  fi
+}
+
+get_connect() {
+  connect=$(for host in k8s-master-1.$k8s.cloud.b-pl.pro k8s-master-2.$k8s.cloud.b-pl.pro k8s-master-3.$k8s.cloud.b-pl.pro
+do
+   nc -zw3 $host $port
+   check=$?
+   if [[ "$check" == "0" ]]
+   then
+      echo $host
+      exit 0
+   fi
+ done)
+ echo $connect
+}
+
+get_token() {
+  local keycloak_token_url="https://$KEYCLOAK_ADDRESS/auth/realms/$KEYCLOAK_AUTH_REALM/protocol/openid-connect/token"
+  echo "[$(date)][INFO] Requesting token from $keycloak_token_url"
+  
+  TOKEN=$(curl -k -s "$keycloak_token_url" \
+    -d grant_type=password \
+    -d response_type=id_token \
+    -d scope=openid \
+    -d client_id="$KEYCLOAK_CLIENT_ID" \
+    -d client_secret="$KEYCLOAK_CLIENT_SECRET" \
+    -d username="$KEYCLOAK_USERNAME" \
+    -d password="$KEYCLOAK_PASSWORD" \
+    -d totp="$KEYCLOAK_TOTP")
+  ERROR=$(echo "$TOKEN" | jq .error -r)
+  if [ "$ERROR" != "null" ];then
+	  echo "[$(date)][ERROR]  $TOKEN" >&2
+	  return 1
+  fi
+}
+
+set_creds() {
+  local id_token refresh_token
+  id_token=$(echo "$TOKEN" | jq .id_token -r)
+  refresh_token=$(echo "$TOKEN" | jq .refresh_token -r)
+  
+  echo "[$(date)][INFO] Adding user $KEYCLOAK_USERNAME to kube config"
+  #kubectl config unset $KEYCLOAK_USERNAME 
+  kubectl config set-cluster $k8s --server=https://$connect:6443 --insecure-skip-tls-verify=true
+  kubectl config set-credentials "$KEYCLOAK_USERNAME" \
+    --auth-provider=oidc \
+    --auth-provider-arg=idp-issuer-url="https://$KEYCLOAK_ADDRESS/auth/realms/$KEYCLOAK_AUTH_REALM" \
+    --auth-provider-arg=client-id="$KEYCLOAK_CLIENT_ID" \
+    --auth-provider-arg=client-secret="$KEYCLOAK_CLIENT_SECRET" \
+    --auth-provider-arg=id-token="$id_token" \
+    --auth-provider-arg=refresh-token="$refresh_token"
+  kubectl config set-context $k8s --cluster=$k8s --user=$KEYCLOAK_USERNAME && kubectl config use-context $k8s
+}
+
+main() {
+  dpkg_jq
+  dpkg_nc
+  dpkg_kubectl
+  mv_conf
+  get_creds
+  get_connect
+  get_token
+  set_creds
+}
+
+main "$@"

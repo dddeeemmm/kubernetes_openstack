@@ -88,6 +88,10 @@ apiServer:
     bind-address: 0.0.0.0
     authorization-mode: "Node,RBAC"
     cloud-provider: "openstack"
+    oidc-username-claim: preferred_username
+    oidc-client-id: {{ oidc_client_id }} 
+    oidc-issuer-url: {{ oidc_issuer_url }}
+    oidc-groups-claim: groups
   extraVolumes:
     - name: "cloud-config"
       hostPath: "/etc/kubernetes/cloud-config"

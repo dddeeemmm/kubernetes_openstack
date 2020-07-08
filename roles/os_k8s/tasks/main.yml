@@ -1,9 +1,24 @@
 ---
 
+- import_tasks: asserts.yml
+
 - name: remove tmp
   local_action: file path=/tmp/pki state=absent
 
 - include_tasks: k8s_local.yml
+  environment:
+    OS_USERNAME: '{{ os_username }}'
+    OS_PASSWORD: '{{ os_password }}'
+    OS_PROJECT_NAME: '{{ os_project_name }}'
+    OS_PROJECT_ID: '{{ os_project_id }}'
+    OS_USER_DOMAIN_NAME: '{{ os_user_domain_name }}'
+    OS_AUTH_URL: '{{ os_auth_url }}'
+    OS_IDENTITY_API_VERSION: '{{ os_identity_api_version }}'
+    OS_PROJECT_DOMAIN_ID: '{{ os_project_domain_id }}'
+    OS_REGION_NAME: '{{ os_region_name }}'
+    OS_INTERFACE: '{{ os_interface }}'
+    validate_certs: '{{ os_validate_certs }}'
+    name: '{{ os_project_name }}-subnet-1'
   tags: openstack
 
 - include_tasks: k8s_base_tasks.yml
@@ -26,10 +41,10 @@
 - block:
   - block:
     
-    - include_tasks: k8s_metrics_tasks.yml
+    - import_tasks: k8s_metrics_tasks.yml
+      tags: metrics
   
     - import_tasks: k8s_fluent-bit_tasks.yml  
-      when: flunt_bit is defined
       tags: flunt-bit
   
     - block:

@@ -1,0 +1,225 @@
+---
+
+- block:
+
+    - block:
+        - name: set os_username from env
+          local_action:
+            module: set_fact
+            os_username: '{{ ansible_env.OS_USERNAME }}'
+      rescue:
+        - block:
+            - name: set os_username from defaults
+              local_action:
+                module: set_fact
+                os_username: '{{ os_username_default }}'
+          rescue:
+            - pause:
+                prompt: Please enter you OpenStack user name
+                echo: yes
+              register: result
+            - name: set os_username from user input
+              local_action:
+                module: set_fact
+                os_username: '{{ result.user_input }}'
+      when: os_username is not defined or os_username == ''
+
+    - block:
+        - name: set os_password from env
+          local_action:
+            module: set_fact
+            os_password: '{{ ansible_env.OS_PASSWORD }}'
+      rescue:
+        - block:
+            - name: set os_password from defaults
+              local_action:
+                module: set_fact
+                os_password: '{{ os_password_default }}'
+          rescue:
+            - pause:
+                prompt: Please enter your OpenStack Password
+                echo: no
+              register: result
+            - name: set os_password from user input
+              local_action:
+                module: set_fact
+                os_password: '{{ result.user_input }}'
+      when: os_password is not defined or os_password == ''
+
+    - block:
+        - name: set os_project_name from env
+          local_action:
+            module: set_fact
+            os_project_name: '{{ ansible_env.OS_PROJECT_NAME }}'
+      rescue:
+        - block:
+            - name: set os_project_name from defaults
+              local_action:
+                module: set_fact
+                os_project_name: '{{ os_project_name_default }}'
+          rescue:
+            - pause:
+                prompt: Please enter your OpenStack Project Name
+                echo: yes
+              register: result
+            - name: set os_project_name from user input
+              local_action:
+                module: set_fact
+                os_project_name: '{{ result.user_input }}'
+      when: os_project_name is not defined or os_project_name == ''
+
+    - block:
+        - name: set os_project_id
+          local_action:
+            module: set_fact
+            os_project_id: '{{ ansible_env.OS_PROJECT_ID }}'
+      rescue:
+        - block:
+            - name: set os_project_id
+              local_action:
+                module: set_fact
+                os_project_id: '{{ os_project_id_default }}'
+          rescue:
+            - pause:
+                prompt: Please enter your OpenStack Project ID
+                echo: yes
+              register: result
+            - name: set os_project_id from user input
+              local_action:
+                module: set_fact
+                os_project_id: '{{ result.user_input }}'
+      when: os_project_id is not defined or os_project_id == ''
+
+    - block:
+        - name: set os_user_domain_name
+          local_action:
+            module: set_fact
+            os_user_domain_name: '{{ ansible_env.OS_USER_DOMAIN_NAME }}'
+      rescue:
+        - block:
+            - name: set os_user_domain_name
+              local_action:
+                module: set_fact
+                os_user_domain_name: '{{ os_user_domain_name_default }}'
+          rescue:
+            - pause:
+                prompt: Please enter your OpenStack User Domain Name
+                echo: yes
+              register: result
+            - name: set os_user_domain_name from user input
+              local_action:
+                module: set_fact
+                os_user_domain_name: '{{ result.user_input }}'
+      when: os_user_domain is not defined or os_user_domain == ''
+
+    - block:
+        - name: set os_auth_url
+          local_action:
+            module: set_fact
+            os_auth_url: '{{ ansible_env.OS_AUTH_URL }}'
+      rescue:
+        - block:
+            - name: set os_auth_url
+              local_action:
+                module: set_fact
+                os_auth_url: '{{ os_auth_url_default }}'
+          rescue:
+            - pause:
+                prompt: Please enter your OpenStack Auth URL
+                echo: yes
+              register: result
+            - name: set os_auth_url from user input
+              local_action:
+                module: set_fact
+                os_auth_url: '{{ result.user_input }}'
+      when: os_auth_url is not defined or os_auth_url == ''
+
+    - block:
+        - name: set os_identity_api_version
+          local_action:
+            module: set_fact
+            os_identity_api_version: '{{ ansible_env.OS_IDENTITY_API_VERSION }}'
+      rescue:
+        - block:
+            - name: set os_identity_api_version
+              local_action:
+                module: set_fact
+                os_identity_api_version: '{{ os_identity_api_version_default }}'
+          rescue:
+            - pause:
+                prompt: Please enter your OpenStack Identity API Version
+                echo: yes
+              register: result
+            - name: set os_identity_api_version from user input
+              local_action:
+                module: set_fact
+                os_identity_api_version: '{{ result.user_input }}'
+      when: os_identity_api_version is not defined or os_identity_api_version == ''
+
+    - block:
+        - name: set os_project_domain_id
+          local_action:
+            module: set_fact
+            os_project_domain_id: '{{ ansible_env.OS_PROJECT_DOMAIN_ID }}'
+      rescue:
+        - block:
+            - name: set os_project_domain_id
+              local_action:
+                module: set_fact
+                os_project_domain_id: '{{ os_project_domain_id_default }}'
+          rescue:
+            - pause:
+                prompt: Please enter your OpenStack Project Domain ID
+                echo: yes
+              register: result
+            - name: set os_project_domain_id from user input
+              local_action:
+                module: set_fact
+                os_project_domain_id: '{{ result.user_input }}'
+      when: os_project_domain_id is not defined or os_project_domain_id == ''
+
+    - block:
+        - name: set os_region_name
+          local_action:
+            module: set_fact
+            os_region_name: '{{ ansible_env.OS_REGION_NAME }}'
+      rescue:
+        - block:
+            - name: set os_region_name
+              local_action:
+                module: set_fact
+                os_region_name: '{{ os_region_name_default }}'
+          rescue:
+            - pause:
+                prompt: Please enter your OpenStack Region Name
+                echo: yes
+              register: result
+            - name: set os_region_name from user input
+              local_action:
+                module: set_fact
+                os_region_name: '{{ result.user_input }}'
+      when: os_region_name is not defined or os_region_name == ''
+
+    - block:
+        - name: set os_interface
+          local_action:
+            module: set_fact
+            os_interface: '{{ ansible_env.OS_INTERFACE }}'
+      rescue:
+        - block:
+            - name: set os_interface
+              local_action:
+                module: set_fact
+                os_interface: '{{ os_interface_default }}'
+          rescue:
+            - pause:
+                prompt: Please enter your OpenStack Interface
+                echo: yes
+              register: result
+            - name: set os_interface from user input
+              local_action:
+                module: set_fact
+                os_interface: '{{ result.user_input }}'
+      when: os_interface is not defined or os_interface == ''
+
+  run_once: true

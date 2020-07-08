@@ -1,0 +1,5 @@
+group_vars/nodes.yaml
+*.retry
+admin.conf
+.idea
+.idea/*

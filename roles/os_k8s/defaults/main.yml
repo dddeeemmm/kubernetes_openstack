@@ -1,1 +1,6 @@
+docker_registry:
+graylog_host:
+docker_username:
+docker_password:
+
 k8s_workers_external_ip: "{% for item in groups ['k8s_worker'] | map ('extract',hostvars,['ansible_default_ipv4','address']) | join(', ') %}{{ item }}{% endfor %}"

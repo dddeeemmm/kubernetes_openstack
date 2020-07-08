@@ -1,5 +1,4 @@
 key_name: "{{ lookup('env','KEY') }}"
-cert_name: ""
 
 name: "{{ lookup('env','NAME') | default('k8s', true) }}"
 
@@ -39,7 +38,22 @@ openstack_domain_id: "{{ lookup('env','OS_PROJECT_DOMAIN_ID') }}"
 openstack_domain_name: "{{ lookup('env', 'OS_USER_DOMAIN_NAME') }}"
 openstack_region_name: "{{ lookup('env', 'OS_REGION_NAME') }}"
 
-docker_registry: ""
-docker_username: ""
-docker_password: ""
-graylog_host: ""
+# OpenStack Authentication
+#os_project_name_default:
+os_project_id_default:
+os_project_domain_id_default:
+os_auth_url_default:
+os_user_domain_name_default:
+os_region_name_default:
+os_interface_default:
+os_identity_api_version_default:
+os_username_default:
+os_password_default:
+
+docker_registry:
+graylog_host:
+docker_username:
+docker_password:
+
+oidc_client_id:
+oidc_issuer_url:

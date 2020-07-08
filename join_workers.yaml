@@ -3,4 +3,4 @@
 - hosts: all
   roles:
   - { role: common }
-  - { role: join_new_workers, workers_for_join: ['k8s-worker-4', 'k8s-worker-5'], tags: ['renew_certs_master'] }
+  - { role: join_new_workers, workers_for_join: ['k8s-worker-5'], tags: ['renew_certs_master'] }

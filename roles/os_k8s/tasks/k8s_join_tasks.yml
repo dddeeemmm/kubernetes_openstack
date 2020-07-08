@@ -51,7 +51,6 @@
       state: directory
 
   - name: symlink admin.conf to ~/.kube/conf
-    become: yes
     file:
       src: /etc/kubernetes/admin.conf
       dest: ~/.kube/config

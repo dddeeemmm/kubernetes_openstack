@@ -3,8 +3,6 @@
 - hosts: localhost
   gather_facts: yes
   vars:
-    os_mode: instances
-    os_project_name: '{{ os_project_name }}'
     os_clusters:
       k8s-master:
         - {
@@ -19,8 +17,8 @@
             name: k8s-worker,
             count: 5,
             img: '{{ ubuntu }}',
-            sg: ['{{os_project_name}}-ssh','{{os_project_name}}-egress','{{os_project_name}}-k8s'],
-            fv: db1.02.04096
+            sg: '{{ sg_k8s }}',
+            fv: c1.08.08192
         }
   roles:
     - {role: os_mgmt, tags: os_mgmt}
